@@ -8,10 +8,16 @@ interface Props {
 }
 
 export const ProbabilityGauge: React.FC<Props> = ({ data, label }) => {
-  const total = data.bullish + data.neutral + data.bearish;
-  const bullishPct = (data.bullish / total) * 100;
-  const neutralPct = (data.neutral / total) * 100;
-  const bearishPct = (data.bearish / total) * 100;
+  if (!data) return null;
+
+  const bullish = data.bullish || 0;
+  const neutral = data.neutral || 0;
+  const bearish = data.bearish || 0;
+  
+  const total = bullish + neutral + bearish || 1; // Prevent div by 0
+  const bullishPct = (bullish / total) * 100;
+  const neutralPct = (neutral / total) * 100;
+  const bearishPct = (bearish / total) * 100;
 
   return (
     <div className="flex flex-col gap-2 p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg">
@@ -22,23 +28,23 @@ export const ProbabilityGauge: React.FC<Props> = ({ data, label }) => {
         <div 
           className="h-full bg-emerald-500 transition-all duration-1000" 
           style={{ width: `${bullishPct}%` }} 
-          title={`Bullish: ${data.bullish}%`}
+          title={`Bullish: ${bullish}%`}
         />
         <div 
           className="h-full bg-zinc-500 transition-all duration-1000" 
           style={{ width: `${neutralPct}%` }} 
-          title={`Neutral: ${data.neutral}%`}
+          title={`Neutral: ${neutral}%`}
         />
         <div 
           className="h-full bg-rose-500 transition-all duration-1000" 
           style={{ width: `${bearishPct}%` }} 
-          title={`Bearish: ${data.bearish}%`}
+          title={`Bearish: ${bearish}%`}
         />
       </div>
       <div className="flex justify-between text-[10px] mono text-zinc-500">
-        <span className="text-emerald-400">BULL: {data.bullish}%</span>
-        <span>NEU: {data.neutral}%</span>
-        <span className="text-rose-400">BEAR: {data.bearish}%</span>
+        <span className="text-emerald-400">BULL: {bullish}%</span>
+        <span>NEU: {neutral}%</span>
+        <span className="text-rose-400">BEAR: {bearish}%</span>
       </div>
     </div>
   );

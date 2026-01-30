@@ -45,11 +45,19 @@ export interface MicrostructureData {
   depthLevels: Array<{ price: number; size: number; side: 'bid' | 'ask' }>;
 }
 
+export interface EntityCluster {
+  companies: string[];
+  persons: string[];
+  products: string[];
+}
+
 export interface NarrativeIntelligence {
-  topEntities: string[];
+  entities: EntityCluster;
   narrativeVelocity: 'Accelerating' | 'Decelerating' | 'Stable';
   sentimentIndex: number; // -100 to 100
+  sentimentBreakdown: { positive: number; neutral: number; negative: number };
   keyThemes: string[];
+  narrativeArchetype: string;
 }
 
 export interface AnalysisResponse {
@@ -66,7 +74,7 @@ export interface AnalysisResponse {
   riskFactors: string[];
   strategicPositioning: StrategicPositioning;
   confidenceScore: 'Low' | 'Medium' | 'High';
-  confidenceRationale: string[]; // New field for detailing derivation and uncertainty
+  confidenceRationale: string[];
   uncertaintyExplanation: string;
   groundingSources: Array<{ title: string; uri: string }>;
 }
