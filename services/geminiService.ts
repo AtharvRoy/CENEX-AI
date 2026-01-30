@@ -7,6 +7,7 @@ export interface ConnectivityStatus {
   status: 'online' | 'offline' | 'degraded';
   message: string;
   latency?: number;
+  isQuota?: boolean;
 }
 
 /**
@@ -76,7 +77,7 @@ function normalizeResponse(data: any, symbol: string): AnalysisResponse {
  * Robust error message extraction. 
  * Handles Error objects, strings, and raw API JSON response objects.
  */
-function parseErrorMessage(error: any): string {
+export function parseErrorMessage(error: any): string {
   if (!error) return "Unknown Logic Fault";
 
   // Case 1: Raw API Error Object { error: { message: "...", code: 429 } }
@@ -152,7 +153,7 @@ export const testConnectivity = async (): Promise<ConnectivityStatus> => {
   } catch (error: any) {
     const msg = parseErrorMessage(error);
     const isQuota = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.toLowerCase().includes('quota');
-    if (isQuota) return { status: 'degraded', message: 'Quota Exhausted.' };
+    if (isQuota) return { status: 'degraded', message: 'Quota Exhausted.', isQuota: true };
     return { status: 'offline', message: 'Protocol Disruption.' };
   }
 };

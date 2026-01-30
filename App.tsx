@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnalysisResponse, MicrostructureData } from './types';
 import { DEFAULT_TICKERS } from './constants';
-import { getMarketIntelligence, testConnectivity, ConnectivityStatus } from './services/geminiService';
+import { getMarketIntelligence, testConnectivity, ConnectivityStatus, parseErrorMessage } from './services/geminiService';
 import { marketDataStore } from './services/storageService';
 import { TerminalOutput } from './components/TerminalOutput';
 import { 
@@ -61,7 +61,6 @@ const App: React.FC = () => {
     setIsLive(true);
     addLog(`Feed: ${symbol} simulation stabilized.`);
     
-    // Increased to 15s to ensure terminal stability and zero token cost
     feedIntervalRef.current = window.setInterval(() => {
       setAnalysis(prev => {
         if (!prev || prev.symbol !== symbol || !prev.microstructure) return prev;
@@ -91,9 +90,8 @@ const App: React.FC = () => {
   const performAnalysis = useCallback(async (symbol: string, customQuery: string = '') => {
     if (!symbol) return;
     
-    // THROTTLE: Prevent rapid clicking (min 3 seconds between requests)
     const now = Date.now();
-    if (now - lastRequestTimeRef.current < 3000) {
+    if (now - lastRequestTimeRef.current < 2000) {
       addLog("Analysis request throttled. Cooling down...");
       return;
     }
@@ -117,13 +115,13 @@ const App: React.FC = () => {
       addLog(`Analysis complete: ${symbol}.`);
     } catch (err: any) {
       console.error("Critical Fault:", err);
-      const errStr = typeof err === 'string' ? err : (err?.message || (err?.error?.message) || JSON.stringify(err));
-      const isQuota = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.toLowerCase().includes('quota');
-      const isNotFound = errStr.includes('Requested entity was not found');
+      const errMsg = parseErrorMessage(err);
+      const isQuota = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.toLowerCase().includes('quota');
+      const isNotFound = errMsg.includes('Requested entity was not found');
       
       setError({
         message: isQuota ? 'Institutional Allocation Exhausted' : isNotFound ? 'API Protocol Error' : 'System Exception',
-        raw: errStr,
+        raw: errMsg,
         isQuota: isQuota,
         isNotFound: isNotFound
       });
@@ -134,41 +132,43 @@ const App: React.FC = () => {
       }
       
       setHealth({ status: 'offline', message: 'Protocol Interrupted' });
-      addLog(`CRITICAL: ${errStr}`);
+      addLog(`CRITICAL: ${errMsg}`);
     } finally {
       setIsLoading(false);
     }
   }, [startLiveFeed]);
 
   const checkHealth = useCallback(async () => {
-    if (error?.isQuota || error?.isNotFound) return;
-
     setIsCheckingHealth(true);
     const status = await testConnectivity();
     setHealth(status);
     setIsCheckingHealth(false);
     
+    if (status.isQuota) {
+      setError({
+        message: 'Institutional Allocation Exhausted',
+        raw: status.message,
+        isQuota: true
+      });
+    }
+
     if (window.aistudio) {
       const selected = await window.aistudio.hasSelectedApiKey();
       setHasUserKey(selected);
     }
-  }, [error?.isQuota, error?.isNotFound]);
+  }, []);
 
   const handleSelectKey = async () => {
     if (window.aistudio) {
       addLog("Launching credential configuration...");
       await window.aistudio.openSelectKey();
       
-      // Mandatory: assume success and continue
       setHasUserKey(true);
       setError(null);
       addLog("Credentials updated. Resuming session...");
       
-      // Auto-recovery
       if (selectedSymbol) {
         performAnalysis(selectedSymbol, query);
-      } else if (query) {
-        performAnalysis(query);
       } else {
         checkHealth();
       }
@@ -188,13 +188,13 @@ const App: React.FC = () => {
     return () => {
       if (feedIntervalRef.current) window.clearInterval(feedIntervalRef.current);
     };
-  }, []); 
+  }, [checkHealth]); 
 
   const renderView = () => {
     if (error?.isQuota || error?.isNotFound) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in duration-500">
-          <div className="max-w-md w-full bg-zinc-900 border border-amber-500/20 rounded-2xl p-8 space-y-6 text-center shadow-2xl relative">
+          <div className="max-w-md w-full bg-zinc-900 border border-amber-500/20 rounded-2xl p-8 space-y-6 text-center shadow-2xl relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-b from-amber-500/5 to-transparent pointer-events-none rounded-2xl" />
             <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto border border-amber-500/20 shadow-[0_0_30px_rgba(245,158,11,0.15)]">
               <AlertTriangle className="text-amber-500" size={32} />
@@ -206,7 +206,7 @@ const App: React.FC = () => {
               <p className="text-sm text-zinc-400 leading-relaxed italic">
                 {error.isNotFound 
                   ? 'The terminal protocol was unable to verify your API identity. Please re-authenticate via the secure select key portal.'
-                  : 'The shared institutional data tier has reached its rate limit. To restore real-time analysis, please connect a billing-enabled personal key.'}
+                  : 'The shared institutional data tier has reached its rate limit. To restore real-time analysis, please connect a billing-enabled personal key from a paid GCP project.'}
               </p>
             </div>
             <div className="space-y-4">
@@ -217,6 +217,14 @@ const App: React.FC = () => {
                 <Key size={18} className="group-hover:rotate-12 transition-transform" />
                 {error.isNotFound ? 'Resolve Authentication' : 'Activate Personal Key'}
               </button>
+              
+              <button 
+                onClick={() => { setError(null); checkHealth(); }}
+                className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+              >
+                Retry Connection
+              </button>
+
               <div className="flex flex-col gap-2 items-center">
                 <a 
                   href="https://ai.google.dev/gemini-api/docs/billing" 
@@ -363,12 +371,6 @@ const App: React.FC = () => {
               </div>
               <p className="text-[11px] text-zinc-700 italic font-medium leading-relaxed">{health.message}</p>
            </div>
-        </div>
-        <div className="mt-auto p-8 bg-gradient-to-t from-zinc-900/50 to-transparent">
-          <div className="flex items-center gap-3 text-zinc-600">
-            <Database size={16} />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Institutional L3 Store Active</span>
-          </div>
         </div>
       </aside>
 
